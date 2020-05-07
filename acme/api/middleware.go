@@ -30,6 +30,39 @@ func logNonce(w http.ResponseWriter, nonce string) {
 	}
 }
 
+// baseURLFromRequest determines the base URL which should be used for constructing link URLs in e.g. the ACME directory
+// result by taking the request Host, TLS and Header[X-Forwarded-Proto] values into consideration.
+// If the Request.Host is an empty string, we return an empty string, to indicate that the configured
+// URL values should be used instead.
+// If this function returns a non-empty result, then this should be used in constructing ACME link URLs.
+func baseURLFromRequest(r *http.Request) string {
+	// TODO: I semantically copied the functionality of determining the protol from boulder web/relative.go
+	// which allows HTTP. Previously this was always forced to be HTTPS for absolute URLs. Should this be
+	// changed to also always force HTTPS protocol?
+	proto := "http"
+	if specifiedProto := r.Header.Get("X-Forwarded-Proto"); specifiedProto != "" {
+		proto = specifiedProto
+	} else if r.TLS != nil {
+		proto += "s"
+	}
+
+	host := r.Host
+	if host == "" {
+		return ""
+	}
+	return proto + "://" + host
+}
+
+// baseURLFromRequest is a middleware that extracts and caches the baseURL
+// from the request.
+// E.g. https://ca.smallstep.com/
+func (h *Handler) baseURLFromRequest(next nextHTTP) nextHTTP {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), baseURLContextKey, baseURLFromRequest(r))
+		next(w, r.WithContext(ctx))
+	}
+}
+
 // addNonce is a middleware that adds a nonce to the response header.
 func (h *Handler) addNonce(next nextHTTP) nextHTTP {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -54,7 +87,8 @@ func (h *Handler) addDirLink(next nextHTTP) nextHTTP {
 			api.WriteError(w, err)
 			return
 		}
-		w.Header().Add("Link", link(h.Auth.GetLink(acme.DirectoryLink, acme.URLSafeProvisionerName(prov), true), "index"))
+		w.Header().Add("Link", link(h.Auth.GetLinkFromBaseURL(acme.DirectoryLink,
+			acme.URLSafeProvisionerName(prov), true, baseURLFromRequest(r)), "index"))
 		next(w, r)
 	}
 }
@@ -217,6 +251,7 @@ func (h *Handler) extractJWK(next nextHTTP) nextHTTP {
 			api.WriteError(w, err)
 			return
 		}
+		baseURL := baseURLFromContext(r)
 		jwk := jws.Signatures[0].Protected.JSONWebKey
 		if jwk == nil {
 			api.WriteError(w, acme.MalformedErr(errors.Errorf("jwk expected in protected header")))
@@ -227,7 +262,7 @@ func (h *Handler) extractJWK(next nextHTTP) nextHTTP {
 			return
 		}
 		ctx = context.WithValue(ctx, jwkContextKey, jwk)
-		acc, err := h.Auth.GetAccountByKey(prov, jwk)
+		acc, err := h.Auth.GetAccountByKey(prov, baseURL, jwk)
 		switch {
 		case nosql.IsErrNotFound(err):
 			// For NewAccount requests ...
@@ -288,8 +323,10 @@ func (h *Handler) lookupJWK(next nextHTTP) nextHTTP {
 			api.WriteError(w, err)
 			return
 		}
+		baseURL := baseURLFromContext(r)
 
-		kidPrefix := h.Auth.GetLink(acme.AccountLink, acme.URLSafeProvisionerName(prov), true, "")
+		kidPrefix := h.Auth.GetLinkFromBaseURL(acme.AccountLink,
+			acme.URLSafeProvisionerName(prov), true, baseURL, "")
 		kid := jws.Signatures[0].Protected.KeyID
 		if !strings.HasPrefix(kid, kidPrefix) {
 			api.WriteError(w, acme.MalformedErr(errors.Errorf("kid does not have "+
@@ -298,7 +335,7 @@ func (h *Handler) lookupJWK(next nextHTTP) nextHTTP {
 		}
 
 		accID := strings.TrimPrefix(kid, kidPrefix)
-		acc, err := h.Auth.GetAccount(prov, accID)
+		acc, err := h.Auth.GetAccount(prov, baseURL, accID)
 		switch {
 		case nosql.IsErrNotFound(err):
 			api.WriteError(w, acme.AccountDoesNotExistErr(nil))

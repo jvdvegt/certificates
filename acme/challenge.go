@@ -79,7 +79,7 @@ type challenge interface {
 	getAccountID() string
 	getValidated() time.Time
 	getCreated() time.Time
-	toACME(nosql.DB, *directory, provisioner.Interface) (*Challenge, error)
+	toACME(nosql.DB, *directory, provisioner.Interface, string) (*Challenge, error)
 }
 
 // ChallengeOptions is the type used to created a new Challenge.
@@ -175,12 +175,12 @@ func (bc *baseChallenge) getError() *AError {
 
 // toACME converts the internal Challenge type into the public acmeChallenge
 // type for presentation in the ACME protocol.
-func (bc *baseChallenge) toACME(db nosql.DB, dir *directory, p provisioner.Interface) (*Challenge, error) {
+func (bc *baseChallenge) toACME(db nosql.DB, dir *directory, p provisioner.Interface, baseURL string) (*Challenge, error) {
 	ac := &Challenge{
 		Type:    bc.getType(),
 		Status:  bc.getStatus(),
 		Token:   bc.getToken(),
-		URL:     dir.getLink(ChallengeLink, URLSafeProvisionerName(p), true, bc.getID()),
+		URL:     dir.getLinkFromBaseURL(ChallengeLink, URLSafeProvisionerName(p), true, baseURL, bc.getID()),
 		ID:      bc.getID(),
 		AuthzID: bc.getAuthzID(),
 	}

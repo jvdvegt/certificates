@@ -51,7 +51,7 @@ type authz interface {
 	getChallenges() []string
 	getCreated() time.Time
 	updateStatus(db nosql.DB) (authz, error)
-	toACME(nosql.DB, *directory, provisioner.Interface) (*Authz, error)
+	toACME(nosql.DB, *directory, provisioner.Interface, string) (*Authz, error)
 }
 
 // baseAuthz is the base authz type that others build from.
@@ -141,14 +141,14 @@ func (ba *baseAuthz) getCreated() time.Time {
 
 // toACME converts the internal Authz type into the public acmeAuthz type for
 // presentation in the ACME protocol.
-func (ba *baseAuthz) toACME(db nosql.DB, dir *directory, p provisioner.Interface) (*Authz, error) {
+func (ba *baseAuthz) toACME(db nosql.DB, dir *directory, p provisioner.Interface, baseURL string) (*Authz, error) {
 	var chs = make([]*Challenge, len(ba.Challenges))
 	for i, chID := range ba.Challenges {
 		ch, err := getChallenge(db, chID)
 		if err != nil {
 			return nil, err
 		}
-		chs[i], err = ch.toACME(db, dir, p)
+		chs[i], err = ch.toACME(db, dir, p, baseURL)
 		if err != nil {
 			return nil, err
 		}

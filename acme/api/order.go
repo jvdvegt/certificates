@@ -73,6 +73,7 @@ func (h *Handler) NewOrder(w http.ResponseWriter, r *http.Request) {
 		api.WriteError(w, err)
 		return
 	}
+	baseURL := baseURLFromContext(r)
 	var nor NewOrderRequest
 	if err := json.Unmarshal(payload.value, &nor); err != nil {
 		api.WriteError(w, acme.MalformedErr(errors.Wrap(err,
@@ -84,7 +85,7 @@ func (h *Handler) NewOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	o, err := h.Auth.NewOrder(prov, acme.OrderOptions{
+	o, err := h.Auth.NewOrder(prov, baseURL, acme.OrderOptions{
 		AccountID:   acc.GetID(),
 		Identifiers: nor.Identifiers,
 		NotBefore:   nor.NotBefore,
@@ -95,7 +96,8 @@ func (h *Handler) NewOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Location", h.Auth.GetLink(acme.OrderLink, acme.URLSafeProvisionerName(prov), true, o.GetID()))
+	w.Header().Set("Location", h.Auth.GetLinkFromBaseURL(acme.OrderLink,
+		acme.URLSafeProvisionerName(prov), true, baseURL, o.GetID()))
 	api.JSONStatus(w, o, http.StatusCreated)
 }
 
@@ -111,14 +113,16 @@ func (h *Handler) GetOrder(w http.ResponseWriter, r *http.Request) {
 		api.WriteError(w, err)
 		return
 	}
+	baseURL := baseURLFromContext(r)
 	oid := chi.URLParam(r, "ordID")
-	o, err := h.Auth.GetOrder(prov, acc.GetID(), oid)
+	o, err := h.Auth.GetOrder(prov, baseURL, acc.GetID(), oid)
 	if err != nil {
 		api.WriteError(w, err)
 		return
 	}
 
-	w.Header().Set("Location", h.Auth.GetLink(acme.OrderLink, acme.URLSafeProvisionerName(prov), true, o.GetID()))
+	w.Header().Set("Location", h.Auth.GetLinkFromBaseURL(acme.OrderLink,
+		acme.URLSafeProvisionerName(prov), true, baseURL, o.GetID()))
 	api.JSON(w, o)
 }
 
@@ -139,6 +143,7 @@ func (h *Handler) FinalizeOrder(w http.ResponseWriter, r *http.Request) {
 		api.WriteError(w, err)
 		return
 	}
+	baseURL := baseURLFromContext(r)
 	var fr FinalizeRequest
 	if err := json.Unmarshal(payload.value, &fr); err != nil {
 		api.WriteError(w, acme.MalformedErr(errors.Wrap(err, "failed to unmarshal finalize-order request payload")))
@@ -150,12 +155,13 @@ func (h *Handler) FinalizeOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	oid := chi.URLParam(r, "ordID")
-	o, err := h.Auth.FinalizeOrder(prov, acc.GetID(), oid, fr.csr)
+	o, err := h.Auth.FinalizeOrder(prov, baseURL, acc.GetID(), oid, fr.csr)
 	if err != nil {
 		api.WriteError(w, err)
 		return
 	}
 
-	w.Header().Set("Location", h.Auth.GetLink(acme.OrderLink, acme.URLSafeProvisionerName(prov), true, o.ID))
+	w.Header().Set("Location", h.Auth.GetLinkFromBaseURL(acme.OrderLink,
+		acme.URLSafeProvisionerName(prov), true, baseURL, o.ID))
 	api.JSON(w, o)
 }

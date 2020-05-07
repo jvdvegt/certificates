@@ -79,13 +79,14 @@ func newAccount(db nosql.DB, ops AccountOptions) (*account, error) {
 
 // toACME converts the internal Account type into the public acmeAccount
 // type for presentation in the ACME protocol.
-func (a *account) toACME(db nosql.DB, dir *directory, p provisioner.Interface) (*Account, error) {
+func (a *account) toACME(db nosql.DB, dir *directory, p provisioner.Interface, baseURL string) (*Account, error) {
 	return &Account{
 		Status:  a.Status,
 		Contact: a.Contact,
-		Orders:  dir.getLink(OrdersByAccountLink, URLSafeProvisionerName(p), true, a.ID),
-		Key:     a.Key,
-		ID:      a.ID,
+		Orders: dir.getLinkFromBaseURL(OrdersByAccountLink,
+			URLSafeProvisionerName(p), true, baseURL, a.ID),
+		Key: a.Key,
+		ID:  a.ID,
 	}, nil
 }
 

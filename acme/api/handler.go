@@ -20,6 +20,7 @@ type contextKey string
 
 const (
 	accContextKey         = contextKey("acc")
+	baseURLContextKey     = contextKey("baseURL")
 	jwsContextKey         = contextKey("jws")
 	jwkContextKey         = contextKey("jwk")
 	payloadContextKey     = contextKey("payload")
@@ -38,6 +39,13 @@ func accountFromContext(r *http.Request) (*acme.Account, error) {
 		return nil, acme.AccountDoesNotExistErr(nil)
 	}
 	return val, nil
+}
+func baseURLFromContext(r *http.Request) string {
+	val, ok := r.Context().Value(baseURLContextKey).(string)
+	if !ok || val == "" {
+		return ""
+	}
+	return val
 }
 func jwkFromContext(r *http.Request) (*jose.JSONWebKey, error) {
 	val, ok := r.Context().Value(jwkContextKey).(*jose.JSONWebKey)
@@ -82,16 +90,16 @@ type Handler struct {
 func (h *Handler) Route(r api.Router) {
 	getLink := h.Auth.GetLink
 	// Standard ACME API
-	r.MethodFunc("GET", getLink(acme.NewNonceLink, "{provisionerID}", false), h.lookupProvisioner(h.addNonce(h.GetNonce)))
-	r.MethodFunc("HEAD", getLink(acme.NewNonceLink, "{provisionerID}", false), h.lookupProvisioner(h.addNonce(h.GetNonce)))
-	r.MethodFunc("GET", getLink(acme.DirectoryLink, "{provisionerID}", false), h.lookupProvisioner(h.addNonce(h.GetDirectory)))
-	r.MethodFunc("HEAD", getLink(acme.DirectoryLink, "{provisionerID}", false), h.lookupProvisioner(h.addNonce(h.GetDirectory)))
+	r.MethodFunc("GET", getLink(acme.NewNonceLink, "{provisionerID}", false), h.baseURLFromRequest(h.lookupProvisioner(h.addNonce(h.GetNonce))))
+	r.MethodFunc("HEAD", getLink(acme.NewNonceLink, "{provisionerID}", false), h.baseURLFromRequest(h.lookupProvisioner(h.addNonce(h.GetNonce))))
+	r.MethodFunc("GET", getLink(acme.DirectoryLink, "{provisionerID}", false), h.baseURLFromRequest(h.lookupProvisioner(h.addNonce(h.GetDirectory))))
+	r.MethodFunc("HEAD", getLink(acme.DirectoryLink, "{provisionerID}", false), h.baseURLFromRequest(h.lookupProvisioner(h.addNonce(h.GetDirectory))))
 
 	extractPayloadByJWK := func(next nextHTTP) nextHTTP {
-		return h.lookupProvisioner(h.addNonce(h.addDirLink(h.verifyContentType(h.parseJWS(h.validateJWS(h.extractJWK(h.verifyAndExtractJWSPayload(next))))))))
+		return h.baseURLFromRequest(h.lookupProvisioner(h.addNonce(h.addDirLink(h.verifyContentType(h.parseJWS(h.validateJWS(h.extractJWK(h.verifyAndExtractJWSPayload(next)))))))))
 	}
 	extractPayloadByKid := func(next nextHTTP) nextHTTP {
-		return h.lookupProvisioner(h.addNonce(h.addDirLink(h.verifyContentType(h.parseJWS(h.validateJWS(h.lookupJWK(h.verifyAndExtractJWSPayload(next))))))))
+		return h.baseURLFromRequest(h.lookupProvisioner(h.addNonce(h.addDirLink(h.verifyContentType(h.parseJWS(h.validateJWS(h.lookupJWK(h.verifyAndExtractJWSPayload(next)))))))))
 	}
 
 	r.MethodFunc("POST", getLink(acme.NewAccountLink, "{provisionerID}", false), extractPayloadByJWK(h.NewAccount))
@@ -123,7 +131,7 @@ func (h *Handler) GetDirectory(w http.ResponseWriter, r *http.Request) {
 		api.WriteError(w, err)
 		return
 	}
-	dir := h.Auth.GetDirectory(prov, baseURLFromRequest(r))
+	dir := h.Auth.GetDirectory(prov, baseURLFromContext(r))
 	api.JSON(w, dir)
 }
 
@@ -139,13 +147,15 @@ func (h *Handler) GetAuthz(w http.ResponseWriter, r *http.Request) {
 		api.WriteError(w, err)
 		return
 	}
-	authz, err := h.Auth.GetAuthz(prov, acc.GetID(), chi.URLParam(r, "authzID"))
+	baseURL := baseURLFromContext(r)
+	authz, err := h.Auth.GetAuthz(prov, baseURL, acc.GetID(), chi.URLParam(r, "authzID"))
 	if err != nil {
 		api.WriteError(w, err)
 		return
 	}
 
-	w.Header().Set("Location", h.Auth.GetLink(acme.AuthzLink, acme.URLSafeProvisionerName(prov), true, authz.GetID()))
+	w.Header().Set("Location", h.Auth.GetLinkFromBaseURL(acme.AuthzLink,
+		acme.URLSafeProvisionerName(prov), true, baseURL, authz.GetID()))
 	api.JSON(w, authz)
 }
 
@@ -161,6 +171,7 @@ func (h *Handler) GetChallenge(w http.ResponseWriter, r *http.Request) {
 		api.WriteError(w, err)
 		return
 	}
+	baseURL := baseURLFromContext(r)
 	// Just verify that the payload was set, since we're not strictly adhering
 	// to ACME V2 spec for reasons specified below.
 	_, err = payloadFromContext(r)
@@ -178,15 +189,17 @@ func (h *Handler) GetChallenge(w http.ResponseWriter, r *http.Request) {
 		ch   *acme.Challenge
 		chID = chi.URLParam(r, "chID")
 	)
-	ch, err = h.Auth.ValidateChallenge(prov, acc.GetID(), chID, acc.GetKey())
+	ch, err = h.Auth.ValidateChallenge(prov, baseURL, acc.GetID(), chID, acc.GetKey())
 	if err != nil {
 		api.WriteError(w, err)
 		return
 	}
 
-	getLink := h.Auth.GetLink
-	w.Header().Add("Link", link(getLink(acme.AuthzLink, acme.URLSafeProvisionerName(prov), true, ch.GetAuthzID()), "up"))
-	w.Header().Set("Location", getLink(acme.ChallengeLink, acme.URLSafeProvisionerName(prov), true, ch.GetID()))
+	getLink := h.Auth.GetLinkFromBaseURL
+	w.Header().Add("Link", link(getLink(acme.AuthzLink, acme.URLSafeProvisionerName(prov),
+		true, baseURL, ch.GetAuthzID()), "up"))
+	w.Header().Set("Location", getLink(acme.ChallengeLink, acme.URLSafeProvisionerName(prov),
+		true, baseURL, ch.GetID()))
 	api.JSON(w, ch)
 }
 

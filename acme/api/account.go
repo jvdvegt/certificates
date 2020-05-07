@@ -81,6 +81,7 @@ func (h *Handler) NewAccount(w http.ResponseWriter, r *http.Request) {
 		api.WriteError(w, err)
 		return
 	}
+	baseURL := baseURLFromContext(r)
 	var nar NewAccountRequest
 	if err := json.Unmarshal(payload.value, &nar); err != nil {
 		api.WriteError(w, acme.MalformedErr(errors.Wrap(err,
@@ -113,7 +114,7 @@ func (h *Handler) NewAccount(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if acc, err = h.Auth.NewAccount(prov, acme.AccountOptions{
+		if acc, err = h.Auth.NewAccount(prov, baseURL, acme.AccountOptions{
 			Key:     jwk,
 			Contact: nar.Contact,
 		}); err != nil {
@@ -125,8 +126,8 @@ func (h *Handler) NewAccount(w http.ResponseWriter, r *http.Request) {
 		httpStatus = http.StatusOK
 	}
 
-	w.Header().Set("Location", h.Auth.GetLink(acme.AccountLink,
-		acme.URLSafeProvisionerName(prov), true, acc.GetID()))
+	w.Header().Set("Location", h.Auth.GetLinkFromBaseURL(acme.AccountLink,
+		acme.URLSafeProvisionerName(prov), true, baseURL, acc.GetID()))
 	api.JSONStatus(w, acc, httpStatus)
 }
 
@@ -147,6 +148,7 @@ func (h *Handler) GetUpdateAccount(w http.ResponseWriter, r *http.Request) {
 		api.WriteError(w, err)
 		return
 	}
+	baseURL := baseURLFromContext(r)
 
 	if !payload.isPostAsGet {
 		var uar UpdateAccountRequest
@@ -160,16 +162,17 @@ func (h *Handler) GetUpdateAccount(w http.ResponseWriter, r *http.Request) {
 		}
 		var err error
 		if uar.IsDeactivateRequest() {
-			acc, err = h.Auth.DeactivateAccount(prov, acc.GetID())
+			acc, err = h.Auth.DeactivateAccount(prov, baseURL, acc.GetID())
 		} else {
-			acc, err = h.Auth.UpdateAccount(prov, acc.GetID(), uar.Contact)
+			acc, err = h.Auth.UpdateAccount(prov, baseURL, acc.GetID(), uar.Contact)
 		}
 		if err != nil {
 			api.WriteError(w, err)
 			return
 		}
 	}
-	w.Header().Set("Location", h.Auth.GetLink(acme.AccountLink, acme.URLSafeProvisionerName(prov), true, acc.GetID()))
+	w.Header().Set("Location", h.Auth.GetLinkFromBaseURL(acme.AccountLink,
+		acme.URLSafeProvisionerName(prov), true, baseURL, acc.GetID()))
 	api.JSON(w, acc)
 }
 
@@ -194,13 +197,14 @@ func (h *Handler) GetOrdersByAccount(w http.ResponseWriter, r *http.Request) {
 		api.WriteError(w, err)
 		return
 	}
+	baseURL := baseURLFromContext(r)
 
 	accID := chi.URLParam(r, "accID")
 	if acc.ID != accID {
 		api.WriteError(w, acme.UnauthorizedErr(errors.New("account ID does not match url param")))
 		return
 	}
-	orders, err := h.Auth.GetOrdersByAccount(prov, acc.GetID())
+	orders, err := h.Auth.GetOrdersByAccount(prov, baseURL, acc.GetID())
 	if err != nil {
 		api.WriteError(w, err)
 		return
