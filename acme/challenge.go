@@ -1,6 +1,7 @@
 package acme
 
 import (
+	"context"
 	"crypto"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -17,7 +18,6 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/smallstep/certificates/authority/provisioner"
 	"github.com/smallstep/cli/jose"
 	"github.com/smallstep/nosql"
 )
@@ -79,7 +79,7 @@ type challenge interface {
 	getAccountID() string
 	getValidated() time.Time
 	getCreated() time.Time
-	toACME(nosql.DB, *directory, provisioner.Interface, string) (*Challenge, error)
+	toACME(context.Context, nosql.DB, *directory) (*Challenge, error)
 }
 
 // ChallengeOptions is the type used to created a new Challenge.
@@ -175,12 +175,18 @@ func (bc *baseChallenge) getError() *AError {
 
 // toACME converts the internal Challenge type into the public acmeChallenge
 // type for presentation in the ACME protocol.
-func (bc *baseChallenge) toACME(db nosql.DB, dir *directory, p provisioner.Interface, baseURL string) (*Challenge, error) {
+func (bc *baseChallenge) toACME(ctx context.Context, db nosql.DB, dir *directory) (*Challenge, error) {
+	prov, err := provisionerFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	baseURL := baseURLFromContext(ctx)
+
 	ac := &Challenge{
 		Type:    bc.getType(),
 		Status:  bc.getStatus(),
 		Token:   bc.getToken(),
-		URL:     dir.getLinkFromBaseURL(ChallengeLink, URLSafeProvisionerName(p), true, baseURL, bc.getID()),
+		URL:     dir.getLinkFromBaseURL(ChallengeLink, URLSafeProvisionerName(prov), true, baseURL, bc.getID()),
 		ID:      bc.getID(),
 		AuthzID: bc.getAuthzID(),
 	}

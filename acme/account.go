@@ -1,11 +1,11 @@
 package acme
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/smallstep/certificates/authority/provisioner"
 	"github.com/smallstep/cli/jose"
 	"github.com/smallstep/nosql"
 )
@@ -79,12 +79,17 @@ func newAccount(db nosql.DB, ops AccountOptions) (*account, error) {
 
 // toACME converts the internal Account type into the public acmeAccount
 // type for presentation in the ACME protocol.
-func (a *account) toACME(db nosql.DB, dir *directory, p provisioner.Interface, baseURL string) (*Account, error) {
+func (a *account) toACME(ctx context.Context, db nosql.DB, dir *directory) (*Account, error) {
+	prov, err := provisionerFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	baseURL := baseURLFromContext(ctx)
 	return &Account{
 		Status:  a.Status,
 		Contact: a.Contact,
 		Orders: dir.getLinkFromBaseURL(OrdersByAccountLink,
-			URLSafeProvisionerName(p), true, baseURL, a.ID),
+			URLSafeProvisionerName(prov), true, baseURL, a.ID),
 		Key: a.Key,
 		ID:  a.ID,
 	}, nil

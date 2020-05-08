@@ -85,7 +85,7 @@ func (h *Handler) NewOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	o, err := h.Auth.NewOrder(prov, baseURL, acme.OrderOptions{
+	o, err := h.Auth.NewOrder(r.Context(), acme.OrderOptions{
 		AccountID:   acc.GetID(),
 		Identifiers: nor.Identifiers,
 		NotBefore:   nor.NotBefore,
@@ -115,7 +115,7 @@ func (h *Handler) GetOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	baseURL := baseURLFromContext(r)
 	oid := chi.URLParam(r, "ordID")
-	o, err := h.Auth.GetOrder(prov, baseURL, acc.GetID(), oid)
+	o, err := h.Auth.GetOrder(r.Context(), acc.GetID(), oid)
 	if err != nil {
 		api.WriteError(w, err)
 		return
@@ -155,7 +155,7 @@ func (h *Handler) FinalizeOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	oid := chi.URLParam(r, "ordID")
-	o, err := h.Auth.FinalizeOrder(prov, baseURL, acc.GetID(), oid, fr.csr)
+	o, err := h.Auth.FinalizeOrder(r.Context(), acc.GetID(), oid, fr.csr)
 	if err != nil {
 		api.WriteError(w, err)
 		return

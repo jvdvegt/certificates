@@ -16,17 +16,6 @@ func link(url, typ string) string {
 	return fmt.Sprintf("<%s>;rel=\"%s\"", url, typ)
 }
 
-type contextKey string
-
-const (
-	accContextKey         = contextKey("acc")
-	baseURLContextKey     = contextKey("baseURL")
-	jwsContextKey         = contextKey("jws")
-	jwkContextKey         = contextKey("jwk")
-	payloadContextKey     = contextKey("payload")
-	provisionerContextKey = contextKey("provisioner")
-)
-
 type payloadInfo struct {
 	value       []byte
 	isPostAsGet bool
@@ -34,42 +23,42 @@ type payloadInfo struct {
 }
 
 func accountFromContext(r *http.Request) (*acme.Account, error) {
-	val, ok := r.Context().Value(accContextKey).(*acme.Account)
+	val, ok := r.Context().Value(acme.AccContextKey).(*acme.Account)
 	if !ok || val == nil {
 		return nil, acme.AccountDoesNotExistErr(nil)
 	}
 	return val, nil
 }
 func baseURLFromContext(r *http.Request) string {
-	val, ok := r.Context().Value(baseURLContextKey).(string)
+	val, ok := r.Context().Value(acme.BaseURLContextKey).(string)
 	if !ok || val == "" {
 		return ""
 	}
 	return val
 }
 func jwkFromContext(r *http.Request) (*jose.JSONWebKey, error) {
-	val, ok := r.Context().Value(jwkContextKey).(*jose.JSONWebKey)
+	val, ok := r.Context().Value(acme.JwkContextKey).(*jose.JSONWebKey)
 	if !ok || val == nil {
 		return nil, acme.ServerInternalErr(errors.Errorf("jwk expected in request context"))
 	}
 	return val, nil
 }
 func jwsFromContext(r *http.Request) (*jose.JSONWebSignature, error) {
-	val, ok := r.Context().Value(jwsContextKey).(*jose.JSONWebSignature)
+	val, ok := r.Context().Value(acme.JwsContextKey).(*jose.JSONWebSignature)
 	if !ok || val == nil {
 		return nil, acme.ServerInternalErr(errors.Errorf("jws expected in request context"))
 	}
 	return val, nil
 }
 func payloadFromContext(r *http.Request) (*payloadInfo, error) {
-	val, ok := r.Context().Value(payloadContextKey).(*payloadInfo)
+	val, ok := r.Context().Value(acme.PayloadContextKey).(*payloadInfo)
 	if !ok || val == nil {
 		return nil, acme.ServerInternalErr(errors.Errorf("payload expected in request context"))
 	}
 	return val, nil
 }
 func provisionerFromContext(r *http.Request) (provisioner.Interface, error) {
-	val, ok := r.Context().Value(provisionerContextKey).(provisioner.Interface)
+	val, ok := r.Context().Value(acme.ProvisionerContextKey).(provisioner.Interface)
 	if !ok || val == nil {
 		return nil, acme.ServerInternalErr(errors.Errorf("provisioner expected in request context"))
 	}
@@ -126,12 +115,11 @@ func (h *Handler) GetNonce(w http.ResponseWriter, r *http.Request) {
 // GetDirectory is the ACME resource for returning a directory configuration
 // for client configuration.
 func (h *Handler) GetDirectory(w http.ResponseWriter, r *http.Request) {
-	prov, err := provisionerFromContext(r)
+	dir, err := h.Auth.GetDirectory(r.Context())
 	if err != nil {
 		api.WriteError(w, err)
 		return
 	}
-	dir := h.Auth.GetDirectory(prov, baseURLFromContext(r))
 	api.JSON(w, dir)
 }
 
@@ -148,7 +136,7 @@ func (h *Handler) GetAuthz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	baseURL := baseURLFromContext(r)
-	authz, err := h.Auth.GetAuthz(prov, baseURL, acc.GetID(), chi.URLParam(r, "authzID"))
+	authz, err := h.Auth.GetAuthz(r.Context(), acc.GetID(), chi.URLParam(r, "authzID"))
 	if err != nil {
 		api.WriteError(w, err)
 		return
@@ -189,7 +177,7 @@ func (h *Handler) GetChallenge(w http.ResponseWriter, r *http.Request) {
 		ch   *acme.Challenge
 		chID = chi.URLParam(r, "chID")
 	)
-	ch, err = h.Auth.ValidateChallenge(prov, baseURL, acc.GetID(), chID, acc.GetKey())
+	ch, err = h.Auth.ValidateChallenge(r.Context(), acc.GetID(), chID, acc.GetKey())
 	if err != nil {
 		api.WriteError(w, err)
 		return

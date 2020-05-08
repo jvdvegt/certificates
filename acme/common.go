@@ -10,6 +10,17 @@ import (
 	"github.com/smallstep/cli/crypto/randutil"
 )
 
+type ContextKey string
+
+const (
+	AccContextKey         = ContextKey("acc")
+	BaseURLContextKey     = ContextKey("baseURL")
+	JwsContextKey         = ContextKey("jws")
+	JwkContextKey         = ContextKey("jwk")
+	PayloadContextKey     = ContextKey("payload")
+	ProvisionerContextKey = ContextKey("provisioner")
+)
+
 // SignAuthority is the interface implemented by a CA authority.
 type SignAuthority interface {
 	Sign(cr *x509.CertificateRequest, opts provisioner.Options, signOpts ...provisioner.SignOption) ([]*x509.Certificate, error)

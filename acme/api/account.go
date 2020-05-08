@@ -114,7 +114,7 @@ func (h *Handler) NewAccount(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if acc, err = h.Auth.NewAccount(prov, baseURL, acme.AccountOptions{
+		if acc, err = h.Auth.NewAccount(r.Context(), acme.AccountOptions{
 			Key:     jwk,
 			Contact: nar.Contact,
 		}); err != nil {
@@ -162,9 +162,9 @@ func (h *Handler) GetUpdateAccount(w http.ResponseWriter, r *http.Request) {
 		}
 		var err error
 		if uar.IsDeactivateRequest() {
-			acc, err = h.Auth.DeactivateAccount(prov, baseURL, acc.GetID())
+			acc, err = h.Auth.DeactivateAccount(r.Context(), acc.GetID())
 		} else {
-			acc, err = h.Auth.UpdateAccount(prov, baseURL, acc.GetID(), uar.Contact)
+			acc, err = h.Auth.UpdateAccount(r.Context(), acc.GetID(), uar.Contact)
 		}
 		if err != nil {
 			api.WriteError(w, err)
@@ -187,24 +187,17 @@ func logOrdersByAccount(w http.ResponseWriter, oids []string) {
 
 // GetOrdersByAccount ACME api for retrieving the list of order urls belonging to an account.
 func (h *Handler) GetOrdersByAccount(w http.ResponseWriter, r *http.Request) {
-	prov, err := provisionerFromContext(r)
-	if err != nil {
-		api.WriteError(w, err)
-		return
-	}
 	acc, err := accountFromContext(r)
 	if err != nil {
 		api.WriteError(w, err)
 		return
 	}
-	baseURL := baseURLFromContext(r)
-
 	accID := chi.URLParam(r, "accID")
 	if acc.ID != accID {
 		api.WriteError(w, acme.UnauthorizedErr(errors.New("account ID does not match url param")))
 		return
 	}
-	orders, err := h.Auth.GetOrdersByAccount(prov, baseURL, acc.GetID())
+	orders, err := h.Auth.GetOrdersByAccount(r.Context(), acc.GetID())
 	if err != nil {
 		api.WriteError(w, err)
 		return

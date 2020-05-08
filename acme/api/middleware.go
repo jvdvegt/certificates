@@ -54,7 +54,7 @@ func baseURLFromRequest(r *http.Request) string {
 // E.g. https://ca.smallstep.com/
 func (h *Handler) baseURLFromRequest(next nextHTTP) nextHTTP {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := context.WithValue(r.Context(), baseURLContextKey, baseURLFromRequest(r))
+		ctx := context.WithValue(r.Context(), acme.BaseURLContextKey, baseURLFromRequest(r))
 		next(w, r.WithContext(ctx))
 	}
 }
@@ -131,7 +131,7 @@ func (h *Handler) parseJWS(next nextHTTP) nextHTTP {
 			api.WriteError(w, acme.MalformedErr(errors.Wrap(err, "failed to parse JWS from request body")))
 			return
 		}
-		ctx := context.WithValue(r.Context(), jwsContextKey, jws)
+		ctx := context.WithValue(r.Context(), acme.JwsContextKey, jws)
 		next(w, r.WithContext(ctx))
 	}
 }
@@ -237,17 +237,11 @@ func (h *Handler) validateJWS(next nextHTTP) nextHTTP {
 func (h *Handler) extractJWK(next nextHTTP) nextHTTP {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		prov, err := provisionerFromContext(r)
-		if err != nil {
-			api.WriteError(w, err)
-			return
-		}
 		jws, err := jwsFromContext(r)
 		if err != nil {
 			api.WriteError(w, err)
 			return
 		}
-		baseURL := baseURLFromContext(r)
 		jwk := jws.Signatures[0].Protected.JSONWebKey
 		if jwk == nil {
 			api.WriteError(w, acme.MalformedErr(errors.Errorf("jwk expected in protected header")))
@@ -257,8 +251,8 @@ func (h *Handler) extractJWK(next nextHTTP) nextHTTP {
 			api.WriteError(w, acme.MalformedErr(errors.Errorf("invalid jwk in protected header")))
 			return
 		}
-		ctx = context.WithValue(ctx, jwkContextKey, jwk)
-		acc, err := h.Auth.GetAccountByKey(prov, baseURL, jwk)
+		ctx = context.WithValue(ctx, acme.JwkContextKey, jwk)
+		acc, err := h.Auth.GetAccountByKey(ctx, jwk)
 		switch {
 		case nosql.IsErrNotFound(err):
 			// For NewAccount requests ...
@@ -271,7 +265,7 @@ func (h *Handler) extractJWK(next nextHTTP) nextHTTP {
 				api.WriteError(w, acme.UnauthorizedErr(errors.New("account is not active")))
 				return
 			}
-			ctx = context.WithValue(ctx, accContextKey, acc)
+			ctx = context.WithValue(ctx, acme.AccContextKey, acc)
 		}
 		next(w, r.WithContext(ctx))
 	}
@@ -298,7 +292,7 @@ func (h *Handler) lookupProvisioner(next nextHTTP) nextHTTP {
 			api.WriteError(w, acme.AccountDoesNotExistErr(errors.New("provisioner must be of type ACME")))
 			return
 		}
-		ctx = context.WithValue(ctx, provisionerContextKey, p)
+		ctx = context.WithValue(ctx, acme.ProvisionerContextKey, p)
 		next(w, r.WithContext(ctx))
 	}
 }
@@ -331,7 +325,7 @@ func (h *Handler) lookupJWK(next nextHTTP) nextHTTP {
 		}
 
 		accID := strings.TrimPrefix(kid, kidPrefix)
-		acc, err := h.Auth.GetAccount(prov, baseURL, accID)
+		acc, err := h.Auth.GetAccount(r.Context(), accID)
 		switch {
 		case nosql.IsErrNotFound(err):
 			api.WriteError(w, acme.AccountDoesNotExistErr(nil))
@@ -344,8 +338,8 @@ func (h *Handler) lookupJWK(next nextHTTP) nextHTTP {
 				api.WriteError(w, acme.UnauthorizedErr(errors.New("account is not active")))
 				return
 			}
-			ctx = context.WithValue(ctx, accContextKey, acc)
-			ctx = context.WithValue(ctx, jwkContextKey, acc.Key)
+			ctx = context.WithValue(ctx, acme.AccContextKey, acc)
+			ctx = context.WithValue(ctx, acme.JwkContextKey, acc.Key)
 			next(w, r.WithContext(ctx))
 			return
 		}
@@ -375,7 +369,7 @@ func (h *Handler) verifyAndExtractJWSPayload(next nextHTTP) nextHTTP {
 			api.WriteError(w, acme.MalformedErr(errors.Wrap(err, "error verifying jws")))
 			return
 		}
-		ctx := context.WithValue(r.Context(), payloadContextKey, &payloadInfo{
+		ctx := context.WithValue(r.Context(), acme.PayloadContextKey, &payloadInfo{
 			value:       payload,
 			isPostAsGet: string(payload) == "",
 			isEmptyJSON: string(payload) == "{}",

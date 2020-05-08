@@ -332,10 +332,15 @@ func getOrder(db nosql.DB, id string) (*order, error) {
 
 // toACME converts the internal Order type into the public acmeOrder type for
 // presentation in the ACME protocol.
-func (o *order) toACME(db nosql.DB, dir *directory, p provisioner.Interface, baseURL string) (*Order, error) {
+func (o *order) toACME(ctx context.Context, db nosql.DB, dir *directory) (*Order, error) {
+	prov, err := provisionerFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	baseURL := baseURLFromContext(ctx)
 	azs := make([]string, len(o.Authorizations))
 	for i, aid := range o.Authorizations {
-		azs[i] = dir.getLinkFromBaseURL(AuthzLink, URLSafeProvisionerName(p),
+		azs[i] = dir.getLinkFromBaseURL(AuthzLink, URLSafeProvisionerName(prov),
 			true, baseURL, aid)
 	}
 	ao := &Order{
@@ -346,13 +351,13 @@ func (o *order) toACME(db nosql.DB, dir *directory, p provisioner.Interface, bas
 		NotAfter:       o.NotAfter.Format(time.RFC3339),
 		Authorizations: azs,
 		Finalize: dir.getLinkFromBaseURL(FinalizeLink,
-			URLSafeProvisionerName(p), true, baseURL, o.ID),
+			URLSafeProvisionerName(prov), true, baseURL, o.ID),
 		ID: o.ID,
 	}
 
 	if o.Certificate != "" {
 		ao.Certificate = dir.getLinkFromBaseURL(CertificateLink,
-			URLSafeProvisionerName(p), true, baseURL, o.Certificate)
+			URLSafeProvisionerName(prov), true, baseURL, o.Certificate)
 	}
 	return ao, nil
 }
